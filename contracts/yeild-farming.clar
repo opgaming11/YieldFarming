@@ -38,3 +38,25 @@
 (define-constant err-insufficient-stake (err u102))
 (define-constant err-pool-expired (err u103))
 (define-constant err-not-active-farmer (err u104))
+
+;; Read-only functions
+(define-read-only (get-farmer (farmer-id uint))
+    (map-get? farmers {farmer-id: farmer-id}))
+
+(define-read-only (get-yield-farmer (address principal))
+    (map-get? yield-farmers {address: address}))
+
+(define-read-only (get-pool (pool-id uint))
+    (map-get? farming-pools {pool-id: pool-id}))
+
+(define-read-only (calculate-rewards (address principal) (pool-id uint))
+    (let ((farmer (get-yield-farmer address))
+          (pool (get-pool pool-id))
+          (current-height block-height))
+        (match (unwrap! pool err-pool-not-found)
+            pool-data
+            (let ((stake-duration (- current-height
+                                   (default-to u0 (get last-claim-height farmer))))
+                  (stake-amount (default-to u0 (get staked-amount farmer))))
+                (some (/ (* (* stake-amount (get apy pool-data)) stake-duration)
+                        (* u365 u144)))))))
