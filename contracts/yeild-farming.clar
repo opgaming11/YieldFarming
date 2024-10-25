@@ -60,3 +60,37 @@
                   (stake-amount (default-to u0 (get staked-amount farmer))))
                 (some (/ (* (* stake-amount (get apy pool-data)) stake-duration)
                         (* u365 u144)))))))
+
+
+;; Public functions
+(define-public (register-farmer (farmer-id uint)
+                               (total-land uint)
+                               (crop-type (string-utf8 24)))
+    (begin
+        (asserts! (is-eq tx-sender contract-owner) err-not-owner)
+        (map-set farmers
+            {farmer-id: farmer-id}
+            {address: tx-sender,
+             active: true,
+             total-land: total-land,
+             crop-type: crop-type,
+             yield-estimate: u0})
+        (ok true)))
+
+(define-public (create-pool (pool-id uint)
+                           (farmer-id uint)
+                           (apy uint)
+                           (min-stake uint))
+    (begin
+        (asserts! (is-eq tx-sender contract-owner) err-not-owner)
+        (asserts! (>= min-stake min-stake-amount) err-insufficient-stake)
+        (map-set farming-pools
+            {pool-id: pool-id}
+            {total-staked: u0,
+             farmer-id: farmer-id,
+             apy: apy,
+             start-height: block-height,
+             end-height: (+ block-height pool-duration),
+             min-stake: min-stake,
+             total-farmers: u0})
+        (ok true)))
