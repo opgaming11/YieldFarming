@@ -94,3 +94,62 @@
              min-stake: min-stake,
              total-farmers: u0})
         (ok true)))
+
+(define-public (stake-tokens (pool-id uint) (amount uint))
+    (let ((pool (unwrap! (get-pool pool-id) err-pool-not-found))
+          (current-height block-height))
+        (begin
+            (asserts! (>= amount (get min-stake pool)) err-insufficient-stake)
+            (asserts! (< current-height (get end-height pool)) err-pool-expired)
+
+            ;; Transfer tokens to contract
+            (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
+
+            ;; Update yield farmer data
+            (map-set yield-farmers
+                {address: tx-sender}
+                {staked-amount: (+ amount
+                    (default-to u0
+                        (get staked-amount (get-yield-farmer tx-sender)))),
+                 rewards: u0,
+                 last-claim-height: current-height})
+
+            ;; Update pool data
+            (map-set farming-pools
+                {pool-id: pool-id}
+                (merge pool
+                    {total-staked: (+ amount (get total-staked pool)),
+                     total-farmers: (+ u1 (get total-farmers pool))}))
+            (ok true))))
+
+(define-public (claim-rewards (pool-id uint))
+    (let ((pool (unwrap! (get-pool pool-id) err-pool-not-found))
+          (farmer (unwrap! (get-yield-farmer tx-sender) err-not-active-farmer))
+          (rewards (unwrap! (calculate-rewards tx-sender pool-id) (err u0))))
+        (begin
+            (try! (as-contract (stx-transfer? rewards (as-contract tx-sender) tx-sender)))
+            (map-set yield-farmers
+                {address: tx-sender}
+                (merge farmer
+                    {rewards: u0,
+                     last-claim-height: block-height}))
+            (ok rewards))))
+
+(define-public (update-yield-estimate (farmer-id uint) (new-estimate uint))
+    (begin
+        (asserts! (is-eq tx-sender contract-owner) err-not-owner)
+        (map-set farmers
+            {farmer-id: farmer-id}
+            (merge (unwrap! (get-farmer farmer-id) err-not-active-farmer)
+                {yield-estimate: new-estimate}))
+        (ok true)))
+
+;; Emergency functions
+(define-public (emergency-shutdown (pool-id uint))
+    (begin
+        (asserts! (is-eq tx-sender contract-owner) err-not-owner)
+        (let ((pool (unwrap! (get-pool pool-id) err-pool-not-found)))
+            (map-set farming-pools
+                {pool-id: pool-id}
+                (merge pool {end-height: block-height}))
+            (ok true))))
